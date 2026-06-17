@@ -2,7 +2,7 @@
 applyTo: "backend/**"
 ---
 
-# Backend Instructions — MRS Portal de Consulta de Documentos
+# Backend Instructions — Portal de Consulta de Documentos
 
 ## Visão Geral
 

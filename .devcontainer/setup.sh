@@ -1,7 +1,7 @@
 #!/bin/bash
 set -e
 
-echo "🚀 Configurando o ambiente de desenvolvimento MRS Portal..."
+echo "🚀 Configurando o ambiente de desenvolvimento ..."
 
 # Instala dependências do backend (se a pasta existir e tiver package.json)
 if [ -f "/workspaces/$(basename $PWD)/backend/package.json" ]; then

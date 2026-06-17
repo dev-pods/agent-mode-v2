@@ -1,5 +1,5 @@
 {
-  "name": "Agent Mode v2 - MRS Portal",
+  "name": "Agent Mode v2",
   "dockerComposeFile": "docker-compose.yml",
   "service": "app",
   "workspaceFolder": "/workspaces/${localWorkspaceFolderBasename}",

@@ -2,7 +2,7 @@
 applyTo: "frontend/**"
 ---
 
-# Frontend Instructions — MRS Portal de Consulta de Documentos
+# Frontend Instructions — Portal de Consulta de Documentos
 
 ## Visão Geral
 
