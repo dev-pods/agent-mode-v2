@@ -1,0 +1,210 @@
+# Workflow: Step 3 - Verificação de Agents Customizados
+#
+# Função: Verifica se o aluno criou os três agents customizados solicitados usando
+# o modo Plan do GitHub Copilot. Os agents devem estar na pasta .github/agents/
+# com os nomes exatos especificados. Opcionalmente, verifica se os arquivos têm
+# conteúdo mínimo relevante para cada especialidade.
+#
+# Gatilho: push na branch build-agent-mode
+# Verificações:
+#   - .github/agents/test.agent.md existe e tem conteúdo
+#   - .github/agents/review.agent.md existe e tem conteúdo
+#   - .github/agents/documentacao.agent.md existe e tem conteúdo
+
+name: Step 3 # Verificação de Agents - Agents Customizados Criados
+
+on:
+  push:
+    branches:
+      - "build-agent-mode"
+
+# Este workflow começa desabilitado e é habilitado automaticamente pelo Step 2
+concurrency:
+  group: step-3-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  actions: write
+  issues: write
+
+env:
+  STEP_4_FILE: ".github/steps/4-tests.md"
+
+jobs:
+  # Job 1: Localiza a issue de progresso criada pelo Step 0
+  find_exercise:
+    name: Encontrar Issue do Exercício
+    uses: skills/exercise-toolkit/.github/workflows/find-exercise-issue.yml@v0.7.0
+
+  # Job 2: Verifica a existência e conteúdo mínimo dos arquivos de agent
+  check_step_work:
+    name: Verificar agents customizados
+    runs-on: ubuntu-latest
+    needs: [find_exercise]
+    env:
+      ISSUE_REPOSITORY: ${{ github.repository }}
+      ISSUE_NUMBER: ${{ needs.find_exercise.outputs.issue-number }}
+
+    steps:
+      - name: Fazer Checkout
+        uses: actions/checkout@v4
+
+      - name: Obter templates de resposta
+        uses: actions/checkout@v4
+        with:
+          repository: skills/exercise-toolkit
+          path: exercise-toolkit
+          ref: v0.7.0
+
+      - name: Encontrar último comentário
+        id: find-last-comment
+        uses: peter-evans/find-comment@v3
+        with:
+          repository: ${{ env.ISSUE_REPOSITORY }}
+          issue-number: ${{ env.ISSUE_NUMBER }}
+          direction: last
+
+      - name: Atualizar comentário - verificando trabalho
+        uses: GrantBirki/comment@v2.1.1
+        with:
+          repository: ${{ env.ISSUE_REPOSITORY }}
+          issue-number: ${{ env.ISSUE_NUMBER }}
+          comment-id: ${{ steps.find-last-comment.outputs.comment-id }}
+          file: exercise-toolkit/markdown-templates/step-feedback/checking-work.md
+          edit-mode: replace
+
+      # INÍCIO: Verificações da Etapa 3
+
+      # Verifica se o agent de testes existe e tem conteúdo mínimo (mais de 50 caracteres)
+      - name: Verificar existência de .github/agents/test.agent.md
+        id: check-test-agent
+        continue-on-error: true
+        run: |
+          if [ -f ".github/agents/test.agent.md" ] && [ "$(wc -c < .github/agents/test.agent.md)" -gt 50 ]; then
+            echo "✅ test.agent.md encontrado com conteúdo"
+            exit 0
+          else
+            echo "❌ test.agent.md não encontrado ou está vazio"
+            exit 1
+          fi
+
+      # Verifica se o agent de review existe e tem conteúdo mínimo
+      - name: Verificar existência de .github/agents/review.agent.md
+        id: check-review-agent
+        continue-on-error: true
+        run: |
+          if [ -f ".github/agents/review.agent.md" ] && [ "$(wc -c < .github/agents/review.agent.md)" -gt 50 ]; then
+            echo "✅ review.agent.md encontrado com conteúdo"
+            exit 0
+          else
+            echo "❌ review.agent.md não encontrado ou está vazio"
+            exit 1
+          fi
+
+      # Verifica se o agent de documentação existe e tem conteúdo mínimo
+      - name: Verificar existência de .github/agents/documentacao.agent.md
+        id: check-docs-agent
+        continue-on-error: true
+        run: |
+          if [ -f ".github/agents/documentacao.agent.md" ] && [ "$(wc -c < .github/agents/documentacao.agent.md)" -gt 50 ]; then
+            echo "✅ documentacao.agent.md encontrado com conteúdo"
+            exit 0
+          else
+            echo "❌ documentacao.agent.md não encontrado ou está vazio"
+            exit 1
+          fi
+
+      # Verificação opcional: o agent de testes menciona frameworks de teste esperados
+      - name: Verificar conteúdo do agent de testes (jest/vitest)
+        id: check-test-agent-content
+        continue-on-error: true
+        run: |
+          if [ -f ".github/agents/test.agent.md" ]; then
+            if grep -qi "jest\|vitest\|supertest\|testing" .github/agents/test.agent.md; then
+              echo "✅ test.agent.md menciona frameworks de teste"
+              exit 0
+            fi
+          fi
+          echo "❌ test.agent.md não menciona frameworks de teste esperados"
+          exit 1
+
+      # Posta a tabela de resultados na issue
+      - name: Atualizar comentário - resultados da etapa
+        uses: GrantBirki/comment@v2.1.1
+        with:
+          repository: ${{ env.ISSUE_REPOSITORY }}
+          issue-number: ${{ env.ISSUE_NUMBER }}
+          comment-id: ${{ steps.find-last-comment.outputs.comment-id }}
+          edit-mode: replace
+          file: exercise-toolkit/markdown-templates/step-feedback/step-results-table.md
+          vars: |
+            step_number: 3
+            results_table:
+              - description: ".github/agents/test.agent.md existe com conteúdo"
+                passed: ${{ steps.check-test-agent.outcome == 'success' }}
+              - description: ".github/agents/review.agent.md existe com conteúdo"
+                passed: ${{ steps.check-review-agent.outcome == 'success' }}
+              - description: ".github/agents/documentacao.agent.md existe com conteúdo"
+                passed: ${{ steps.check-docs-agent.outcome == 'success' }}
+              - description: "Agent de testes menciona frameworks (jest/vitest)"
+                passed: ${{ steps.check-test-agent-content.outcome == 'success' }}
+
+      # FIM: Verificações da Etapa 3
+
+      - name: Falhar job se verificações obrigatórias não passaram
+        if: |
+          steps.check-test-agent.outcome == 'failure' ||
+          steps.check-review-agent.outcome == 'failure' ||
+          steps.check-docs-agent.outcome == 'failure'
+        run: exit 1
+
+  # Job 3: Posta o conteúdo da Etapa 4 e habilita o próximo workflow
+  post_next_step_content:
+    name: Postar conteúdo da próxima etapa
+    needs: [find_exercise, check_step_work]
+    runs-on: ubuntu-latest
+    env:
+      ISSUE_REPOSITORY: ${{ github.repository }}
+      ISSUE_NUMBER: ${{ needs.find_exercise.outputs.issue-number }}
+
+    steps:
+      - name: Fazer Checkout
+        uses: actions/checkout@v4
+
+      - name: Obter templates de resposta
+        uses: actions/checkout@v4
+        with:
+          repository: skills/exercise-toolkit
+          path: exercise-toolkit
+          ref: v0.7.0
+
+      - name: Criar comentário - etapa finalizada
+        uses: GrantBirki/comment@v2.1.1
+        with:
+          repository: ${{ env.ISSUE_REPOSITORY }}
+          issue-number: ${{ env.ISSUE_NUMBER }}
+          file: exercise-toolkit/markdown-templates/step-feedback/step-finished-prepare-next-step.md
+          vars: |
+            next_step_number: 4
+
+      - name: Criar comentário - adicionar conteúdo da etapa
+        uses: GrantBirki/comment@v2.1.1
+        with:
+          repository: ${{ env.ISSUE_REPOSITORY }}
+          issue-number: ${{ env.ISSUE_NUMBER }}
+          file: ${{ env.STEP_4_FILE }}
+
+      - name: Criar comentário - observando progresso
+        uses: GrantBirki/comment@v2.1.1
+        with:
+          repository: ${{ env.ISSUE_REPOSITORY }}
+          issue-number: ${{ env.ISSUE_NUMBER }}
+          file: exercise-toolkit/markdown-templates/step-feedback/watching-for-progress.md
+
+      - name: Desabilitar workflow atual e habilitar o próximo
+        run: |
+          gh workflow disable "${{ github.workflow }}"
+          gh workflow enable "Step 4"
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

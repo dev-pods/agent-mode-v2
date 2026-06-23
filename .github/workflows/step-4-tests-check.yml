@@ -1,0 +1,211 @@
+# Workflow: Step 4 - Verificação de Testes Unitários
+#
+# Função: Verifica se o aluno gerou testes unitários com o agent de testes e se
+# os testes passam. Valida tanto a existência de arquivos de teste quanto a
+# execução bem-sucedida do comando "npm test" em ambos os projetos.
+#
+# Gatilho: push na branch build-agent-mode
+# Verificações:
+#   - Existência de arquivos *.test.* ou *.spec.* no backend
+#   - Existência de arquivos *.test.* ou *.spec.* no frontend
+#   - npm test no backend executa sem falhas
+#   - npm test no frontend executa sem falhas
+
+name: Step 4 # Verificação de Testes - Testes Unitários Implementados
+
+on:
+  push:
+    branches:
+      - "build-agent-mode"
+
+# Este workflow começa desabilitado e é habilitado automaticamente pelo Step 3
+concurrency:
+  group: step-4-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  actions: write
+  issues: write
+
+env:
+  STEP_5_FILE: ".github/steps/5-docs.md"
+
+jobs:
+  # Job 1: Localiza a issue de progresso criada pelo Step 0
+  find_exercise:
+    name: Encontrar Issue do Exercício
+    uses: skills/exercise-toolkit/.github/workflows/find-exercise-issue.yml@v0.7.0
+
+  # Job 2: Verifica a existência dos arquivos de teste e executa os testes
+  check_step_work:
+    name: Verificar testes unitários
+    runs-on: ubuntu-latest
+    needs: [find_exercise]
+    env:
+      ISSUE_REPOSITORY: ${{ github.repository }}
+      ISSUE_NUMBER: ${{ needs.find_exercise.outputs.issue-number }}
+
+    steps:
+      - name: Fazer Checkout
+        uses: actions/checkout@v4
+
+      - name: Obter templates de resposta
+        uses: actions/checkout@v4
+        with:
+          repository: skills/exercise-toolkit
+          path: exercise-toolkit
+          ref: v0.7.0
+
+      - name: Configurar Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Encontrar último comentário
+        id: find-last-comment
+        uses: peter-evans/find-comment@v3
+        with:
+          repository: ${{ env.ISSUE_REPOSITORY }}
+          issue-number: ${{ env.ISSUE_NUMBER }}
+          direction: last
+
+      - name: Atualizar comentário - verificando trabalho
+        uses: GrantBirki/comment@v2.1.1
+        with:
+          repository: ${{ env.ISSUE_REPOSITORY }}
+          issue-number: ${{ env.ISSUE_NUMBER }}
+          comment-id: ${{ steps.find-last-comment.outputs.comment-id }}
+          file: exercise-toolkit/markdown-templates/step-feedback/checking-work.md
+          edit-mode: replace
+
+      # INÍCIO: Verificações da Etapa 4
+
+      # Verifica se existem arquivos de teste no backend (*.test.* ou *.spec.*)
+      - name: Verificar existência de arquivos de teste no backend
+        id: check-backend-tests
+        continue-on-error: true
+        run: |
+          TEST_COUNT=$(find backend -type f \( -name "*.test.js" -o -name "*.test.ts" -o -name "*.spec.js" -o -name "*.spec.ts" \) 2>/dev/null | wc -l)
+          if [ "$TEST_COUNT" -gt 0 ]; then
+            echo "✅ $TEST_COUNT arquivo(s) de teste encontrado(s) no backend"
+            exit 0
+          else
+            echo "❌ Nenhum arquivo de teste encontrado no backend"
+            exit 1
+          fi
+
+      # Verifica se existem arquivos de teste no frontend (*.test.* ou *.spec.*)
+      - name: Verificar existência de arquivos de teste no frontend
+        id: check-frontend-tests
+        continue-on-error: true
+        run: |
+          TEST_COUNT=$(find frontend -type f \( -name "*.test.js" -o -name "*.test.ts" -o -name "*.spec.js" -o -name "*.spec.ts" \) 2>/dev/null | wc -l)
+          if [ "$TEST_COUNT" -gt 0 ]; then
+            echo "✅ $TEST_COUNT arquivo(s) de teste encontrado(s) no frontend"
+            exit 0
+          else
+            echo "❌ Nenhum arquivo de teste encontrado no frontend"
+            exit 1
+          fi
+
+      # Instala dependências e executa os testes do backend
+      - name: Instalar dependências e executar testes do backend
+        id: check-backend-test-run
+        continue-on-error: true
+        run: |
+          cd backend
+          npm ci
+          npm test -- --passWithNoTests 2>&1 | tee /tmp/backend-test-output.txt
+          exit ${PIPESTATUS[0]}
+
+      # Instala dependências e executa os testes do frontend
+      - name: Instalar dependências e executar testes do frontend
+        id: check-frontend-test-run
+        continue-on-error: true
+        run: |
+          cd frontend
+          npm ci
+          npm test -- --passWithNoTests 2>&1 | tee /tmp/frontend-test-output.txt
+          exit ${PIPESTATUS[0]}
+
+      # Posta a tabela de resultados na issue
+      - name: Atualizar comentário - resultados da etapa
+        uses: GrantBirki/comment@v2.1.1
+        with:
+          repository: ${{ env.ISSUE_REPOSITORY }}
+          issue-number: ${{ env.ISSUE_NUMBER }}
+          comment-id: ${{ steps.find-last-comment.outputs.comment-id }}
+          edit-mode: replace
+          file: exercise-toolkit/markdown-templates/step-feedback/step-results-table.md
+          vars: |
+            step_number: 4
+            results_table:
+              - description: "Arquivos de teste existem no backend (*.test.* ou *.spec.*)"
+                passed: ${{ steps.check-backend-tests.outcome == 'success' }}
+              - description: "Arquivos de teste existem no frontend (*.test.* ou *.spec.*)"
+                passed: ${{ steps.check-frontend-tests.outcome == 'success' }}
+              - description: "npm test no backend executou com sucesso"
+                passed: ${{ steps.check-backend-test-run.outcome == 'success' }}
+              - description: "npm test no frontend executou com sucesso"
+                passed: ${{ steps.check-frontend-test-run.outcome == 'success' }}
+
+      # FIM: Verificações da Etapa 4
+
+      - name: Falhar job se verificações não passaram
+        if: |
+          steps.check-backend-tests.outcome == 'failure' ||
+          steps.check-frontend-tests.outcome == 'failure' ||
+          steps.check-backend-test-run.outcome == 'failure' ||
+          steps.check-frontend-test-run.outcome == 'failure'
+        run: exit 1
+
+  # Job 3: Posta o conteúdo da Etapa 5 e habilita o próximo workflow
+  post_next_step_content:
+    name: Postar conteúdo da próxima etapa
+    needs: [find_exercise, check_step_work]
+    runs-on: ubuntu-latest
+    env:
+      ISSUE_REPOSITORY: ${{ github.repository }}
+      ISSUE_NUMBER: ${{ needs.find_exercise.outputs.issue-number }}
+
+    steps:
+      - name: Fazer Checkout
+        uses: actions/checkout@v4
+
+      - name: Obter templates de resposta
+        uses: actions/checkout@v4
+        with:
+          repository: skills/exercise-toolkit
+          path: exercise-toolkit
+          ref: v0.7.0
+
+      - name: Criar comentário - etapa finalizada
+        uses: GrantBirki/comment@v2.1.1
+        with:
+          repository: ${{ env.ISSUE_REPOSITORY }}
+          issue-number: ${{ env.ISSUE_NUMBER }}
+          file: exercise-toolkit/markdown-templates/step-feedback/step-finished-prepare-next-step.md
+          vars: |
+            next_step_number: 5
+
+      - name: Criar comentário - adicionar conteúdo da etapa
+        uses: GrantBirki/comment@v2.1.1
+        with:
+          repository: ${{ env.ISSUE_REPOSITORY }}
+          issue-number: ${{ env.ISSUE_NUMBER }}
+          file: ${{ env.STEP_5_FILE }}
+
+      - name: Criar comentário - observando progresso
+        uses: GrantBirki/comment@v2.1.1
+        with:
+          repository: ${{ env.ISSUE_REPOSITORY }}
+          issue-number: ${{ env.ISSUE_NUMBER }}
+          file: exercise-toolkit/markdown-templates/step-feedback/watching-for-progress.md
+
+      - name: Desabilitar workflow atual e habilitar o próximo
+        run: |
+          gh workflow disable "${{ github.workflow }}"
+          gh workflow enable "Step 5"
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
