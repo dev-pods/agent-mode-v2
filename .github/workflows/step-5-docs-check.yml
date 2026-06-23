@@ -1,0 +1,263 @@
+# Workflow: Step 5 - Verificação de Documentação
+#
+# Função: Verifica se o aluno atualizou os READMEs do backend e do frontend usando
+# o agent de documentação. As verificações garantem que os READMEs não são mais
+# o placeholder inicial e contêm as seções mínimas necessárias.
+#
+# Gatilho: push na branch build-agent-mode
+# Verificações:
+#   - backend/README.md existe com conteúdo substancial (> 200 caracteres)
+#   - frontend/README.md existe com conteúdo substancial (> 200 caracteres)
+#   - backend/README.md contém seções sobre: como rodar, descrição, dados de teste
+#   - frontend/README.md contém seções sobre: como rodar, descrição, dados de teste
+
+name: Step 5 # Verificação de Documentação - READMEs Atualizados
+
+on:
+  push:
+    branches:
+      - "build-agent-mode"
+
+# Este workflow começa desabilitado e é habilitado automaticamente pelo Step 4
+concurrency:
+  group: step-5-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  actions: write
+  issues: write
+
+jobs:
+  # Job 1: Localiza a issue de progresso criada pelo Step 0
+  find_exercise:
+    name: Encontrar Issue do Exercício
+    uses: skills/exercise-toolkit/.github/workflows/find-exercise-issue.yml@v0.7.0
+
+  # Job 2: Verifica se os READMEs foram atualizados com conteúdo relevante
+  check_step_work:
+    name: Verificar documentação (READMEs)
+    runs-on: ubuntu-latest
+    needs: [find_exercise]
+    env:
+      ISSUE_REPOSITORY: ${{ github.repository }}
+      ISSUE_NUMBER: ${{ needs.find_exercise.outputs.issue-number }}
+
+    steps:
+      - name: Fazer Checkout
+        uses: actions/checkout@v4
+
+      - name: Obter templates de resposta
+        uses: actions/checkout@v4
+        with:
+          repository: skills/exercise-toolkit
+          path: exercise-toolkit
+          ref: v0.7.0
+
+      - name: Encontrar último comentário
+        id: find-last-comment
+        uses: peter-evans/find-comment@v3
+        with:
+          repository: ${{ env.ISSUE_REPOSITORY }}
+          issue-number: ${{ env.ISSUE_NUMBER }}
+          direction: last
+
+      - name: Atualizar comentário - verificando trabalho
+        uses: GrantBirki/comment@v2.1.1
+        with:
+          repository: ${{ env.ISSUE_REPOSITORY }}
+          issue-number: ${{ env.ISSUE_NUMBER }}
+          comment-id: ${{ steps.find-last-comment.outputs.comment-id }}
+          file: exercise-toolkit/markdown-templates/step-feedback/checking-work.md
+          edit-mode: replace
+
+      # INÍCIO: Verificações da Etapa 5
+
+      # Verifica se o README do backend existe e tem conteúdo substancial (> 200 chars)
+      - name: Verificar existência e tamanho de backend/README.md
+        id: check-backend-readme
+        continue-on-error: true
+        run: |
+          if [ -f "backend/README.md" ] && [ "$(wc -c < backend/README.md)" -gt 200 ]; then
+            echo "✅ backend/README.md encontrado com conteúdo substancial"
+            exit 0
+          else
+            echo "❌ backend/README.md não encontrado ou com conteúdo insuficiente"
+            exit 1
+          fi
+
+      # Verifica se o README do frontend existe e tem conteúdo substancial (> 200 chars)
+      - name: Verificar existência e tamanho de frontend/README.md
+        id: check-frontend-readme
+        continue-on-error: true
+        run: |
+          if [ -f "frontend/README.md" ] && [ "$(wc -c < frontend/README.md)" -gt 200 ]; then
+            echo "✅ frontend/README.md encontrado com conteúdo substancial"
+            exit 0
+          else
+            echo "❌ frontend/README.md não encontrado ou com conteúdo insuficiente"
+            exit 1
+          fi
+
+      # Verifica se o README do backend contém seção "como rodar" (ou variações)
+      - name: Verificar seção "como rodar" no README do backend
+        id: check-backend-readme-run
+        continue-on-error: true
+        run: |
+          if [ -f "backend/README.md" ]; then
+            if grep -qi "como rodar\|como executar\|getting started\|how to run\|instalação\|installation\|rodando\|running" backend/README.md; then
+              echo "✅ backend/README.md contém seção de como rodar"
+              exit 0
+            fi
+          fi
+          echo "❌ backend/README.md não contém seção de como rodar"
+          exit 1
+
+      # Verifica se o README do backend contém descrição do projeto
+      - name: Verificar descrição no README do backend
+        id: check-backend-readme-desc
+        continue-on-error: true
+        run: |
+          if [ -f "backend/README.md" ]; then
+            if grep -qi "descrição\|descricao\|sobre\|about\|description\|projeto\|project" backend/README.md; then
+              echo "✅ backend/README.md contém descrição do projeto"
+              exit 0
+            fi
+          fi
+          echo "❌ backend/README.md não contém descrição do projeto"
+          exit 1
+
+      # Verifica se o README do frontend contém seção "como rodar"
+      - name: Verificar seção "como rodar" no README do frontend
+        id: check-frontend-readme-run
+        continue-on-error: true
+        run: |
+          if [ -f "frontend/README.md" ]; then
+            if grep -qi "como rodar\|como executar\|getting started\|how to run\|instalação\|installation\|rodando\|running" frontend/README.md; then
+              echo "✅ frontend/README.md contém seção de como rodar"
+              exit 0
+            fi
+          fi
+          echo "❌ frontend/README.md não contém seção de como rodar"
+          exit 1
+
+      # Verifica se o README do frontend contém descrição do projeto
+      - name: Verificar descrição no README do frontend
+        id: check-frontend-readme-desc
+        continue-on-error: true
+        run: |
+          if [ -f "frontend/README.md" ]; then
+            if grep -qi "descrição\|descricao\|sobre\|about\|description\|projeto\|project" frontend/README.md; then
+              echo "✅ frontend/README.md contém descrição do projeto"
+              exit 0
+            fi
+          fi
+          echo "❌ frontend/README.md não contém descrição do projeto"
+          exit 1
+
+      # Verifica se os READMEs mencionam dados de teste/mocks
+      - name: Verificar dados de teste/mocks no README do backend
+        id: check-backend-readme-data
+        continue-on-error: true
+        run: |
+          if [ -f "backend/README.md" ]; then
+            if grep -qi "dados de teste\|mock\|teste\|test data\|exemplos\|examples\|seed\|sample" backend/README.md; then
+              echo "✅ backend/README.md contém informações sobre dados de teste"
+              exit 0
+            fi
+          fi
+          echo "❌ backend/README.md não contém informações sobre dados de teste"
+          exit 1
+
+      # Posta a tabela de resultados na issue
+      - name: Atualizar comentário - resultados da etapa
+        uses: GrantBirki/comment@v2.1.1
+        with:
+          repository: ${{ env.ISSUE_REPOSITORY }}
+          issue-number: ${{ env.ISSUE_NUMBER }}
+          comment-id: ${{ steps.find-last-comment.outputs.comment-id }}
+          edit-mode: replace
+          file: exercise-toolkit/markdown-templates/step-feedback/step-results-table.md
+          vars: |
+            step_number: 5
+            results_table:
+              - description: "backend/README.md existe com conteúdo substancial"
+                passed: ${{ steps.check-backend-readme.outcome == 'success' }}
+              - description: "frontend/README.md existe com conteúdo substancial"
+                passed: ${{ steps.check-frontend-readme.outcome == 'success' }}
+              - description: "backend/README.md contém seção de como rodar"
+                passed: ${{ steps.check-backend-readme-run.outcome == 'success' }}
+              - description: "backend/README.md contém descrição do projeto"
+                passed: ${{ steps.check-backend-readme-desc.outcome == 'success' }}
+              - description: "frontend/README.md contém seção de como rodar"
+                passed: ${{ steps.check-frontend-readme-run.outcome == 'success' }}
+              - description: "frontend/README.md contém descrição do projeto"
+                passed: ${{ steps.check-frontend-readme-desc.outcome == 'success' }}
+              - description: "backend/README.md menciona dados de teste ou mocks"
+                passed: ${{ steps.check-backend-readme-data.outcome == 'success' }}
+
+      # FIM: Verificações da Etapa 5
+
+      - name: Falhar job se verificações obrigatórias não passaram
+        if: |
+          steps.check-backend-readme.outcome == 'failure' ||
+          steps.check-frontend-readme.outcome == 'failure' ||
+          steps.check-backend-readme-run.outcome == 'failure' ||
+          steps.check-frontend-readme-run.outcome == 'failure'
+        run: exit 1
+
+  # Job 3: Posta o feedback de conclusão do curso na issue
+  post_next_step_content:
+    name: Postar conclusão do curso
+    needs: [find_exercise, check_step_work]
+    runs-on: ubuntu-latest
+    env:
+      ISSUE_REPOSITORY: ${{ github.repository }}
+      ISSUE_NUMBER: ${{ needs.find_exercise.outputs.issue-number }}
+
+    steps:
+      - name: Fazer Checkout
+        uses: actions/checkout@v4
+
+      - name: Obter templates de resposta
+        uses: actions/checkout@v4
+        with:
+          repository: skills/exercise-toolkit
+          path: exercise-toolkit
+          ref: v0.7.0
+
+      # Posta a mensagem de conclusão do curso
+      - name: Criar comentário - curso concluído
+        uses: GrantBirki/comment@v2.1.1
+        with:
+          repository: ${{ env.ISSUE_REPOSITORY }}
+          issue-number: ${{ env.ISSUE_NUMBER }}
+          file: exercise-toolkit/markdown-templates/step-feedback/step-finished-prepare-next-step.md
+          vars: |
+            next_step_number: 🎉 Curso Concluído!
+
+      # Posta o conteúdo final de revisão do curso
+      - name: Criar comentário - resumo final do curso
+        uses: GrantBirki/comment@v2.1.1
+        with:
+          repository: ${{ env.ISSUE_REPOSITORY }}
+          issue-number: ${{ env.ISSUE_NUMBER }}
+          body: |
+            ## 🎉 Parabéns! Você concluiu o curso!
+
+            Você dominou o **Modo Agent do GitHub Copilot** e completou todas as etapas:
+
+            - ✅ **Etapa 1** — Estrutura de Backend e Frontend criada
+            - ✅ **Etapa 2** — Dependências instaladas e aplicação buildada
+            - ✅ **Etapa 3** — Agents customizados criados (test, review, documentação)
+            - ✅ **Etapa 4** — Testes unitários implementados e passando
+            - ✅ **Etapa 5** — Documentação atualizada com o agent de docs
+
+            Continue explorando o Modo Agent em seus próprios projetos! 🚀
+
+      # Desabilita este workflow — o curso foi concluído
+      - name: Desabilitar workflow da etapa final
+        run: |
+          gh workflow disable "${{ github.workflow }}"
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

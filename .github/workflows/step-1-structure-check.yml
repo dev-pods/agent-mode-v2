@@ -1,0 +1,214 @@
+# Workflow: Step 1 - Verificação de Estrutura
+#
+# Função: Verifica se o aluno criou corretamente a estrutura de pastas do backend e
+# do frontend. As verificações são simples — apenas confirmar a existência das
+# pastas e dos arquivos package.json — sem executar código. Isso valida que o
+# aluno concluiu a etapa de criação da estrutura inicial da aplicação.
+#
+# Gatilho: push na branch build-agent-mode
+# Verificações:
+#   - backend/package.json existe
+#   - frontend/package.json existe
+#   - backend/src/ tem pelo menos um arquivo
+#   - frontend/src/ tem pelo menos um arquivo
+
+name: Step 1 # Verificação de Estrutura - Backend e Frontend
+
+on:
+  push:
+    branches:
+      - "build-agent-mode"
+
+# Este workflow começa desabilitado e é habilitado automaticamente pelo Step 0
+# Adicione "concurrency" para evitar execuções paralelas do mesmo workflow
+concurrency:
+  group: step-1-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  actions: write
+  issues: write
+
+env:
+  STEP_2_FILE: ".github/steps/2-run.md"
+
+jobs:
+  # Job 1: Localiza a issue de progresso criada pelo Step 0
+  find_exercise:
+    name: Encontrar Issue do Exercício
+    uses: skills/exercise-toolkit/.github/workflows/find-exercise-issue.yml@v0.7.0
+
+  # Job 2: Executa as verificações de estrutura
+  check_step_work:
+    name: Verificar estrutura de backend e frontend
+    runs-on: ubuntu-latest
+    needs: [find_exercise]
+    env:
+      ISSUE_REPOSITORY: ${{ github.repository }}
+      ISSUE_NUMBER: ${{ needs.find_exercise.outputs.issue-number }}
+
+    steps:
+      - name: Fazer Checkout
+        uses: actions/checkout@v4
+
+      - name: Obter templates de resposta
+        uses: actions/checkout@v4
+        with:
+          repository: skills/exercise-toolkit
+          path: exercise-toolkit
+          ref: v0.7.0
+
+      - name: Encontrar último comentário
+        id: find-last-comment
+        uses: peter-evans/find-comment@v3
+        with:
+          repository: ${{ env.ISSUE_REPOSITORY }}
+          issue-number: ${{ env.ISSUE_NUMBER }}
+          direction: last
+
+      - name: Atualizar comentário - verificando trabalho
+        uses: GrantBirki/comment@v2.1.1
+        with:
+          repository: ${{ env.ISSUE_REPOSITORY }}
+          issue-number: ${{ env.ISSUE_NUMBER }}
+          comment-id: ${{ steps.find-last-comment.outputs.comment-id }}
+          file: exercise-toolkit/markdown-templates/step-feedback/checking-work.md
+          edit-mode: replace
+
+      # INÍCIO: Verificações da Etapa 1
+
+      # Verifica se a pasta backend com package.json existe
+      - name: Verificar existência de backend/package.json
+        id: check-backend-package
+        continue-on-error: true
+        run: |
+          if [ -f "backend/package.json" ]; then
+            echo "✅ backend/package.json encontrado"
+            exit 0
+          else
+            echo "❌ backend/package.json não encontrado"
+            exit 1
+          fi
+
+      # Verifica se a pasta frontend com package.json existe
+      - name: Verificar existência de frontend/package.json
+        id: check-frontend-package
+        continue-on-error: true
+        run: |
+          if [ -f "frontend/package.json" ]; then
+            echo "✅ frontend/package.json encontrado"
+            exit 0
+          else
+            echo "❌ frontend/package.json não encontrado"
+            exit 1
+          fi
+
+      # Verifica se a pasta src do backend tem pelo menos um arquivo de código
+      - name: Verificar existência de arquivos em backend/src
+        id: check-backend-src
+        continue-on-error: true
+        run: |
+          if [ -d "backend/src" ] && [ "$(find backend/src -type f | head -1)" != "" ]; then
+            echo "✅ backend/src/ encontrado com arquivos"
+            exit 0
+          else
+            echo "❌ backend/src/ não encontrado ou está vazio"
+            exit 1
+          fi
+
+      # Verifica se a pasta src do frontend tem pelo menos um arquivo de código
+      - name: Verificar existência de arquivos em frontend/src
+        id: check-frontend-src
+        continue-on-error: true
+        run: |
+          if [ -d "frontend/src" ] && [ "$(find frontend/src -type f | head -1)" != "" ]; then
+            echo "✅ frontend/src/ encontrado com arquivos"
+            exit 0
+          else
+            echo "❌ frontend/src/ não encontrado ou está vazio"
+            exit 1
+          fi
+
+      # Posta a tabela de resultados na issue
+      - name: Atualizar comentário - resultados da etapa
+        uses: GrantBirki/comment@v2.1.1
+        with:
+          repository: ${{ env.ISSUE_REPOSITORY }}
+          issue-number: ${{ env.ISSUE_NUMBER }}
+          comment-id: ${{ steps.find-last-comment.outputs.comment-id }}
+          edit-mode: replace
+          file: exercise-toolkit/markdown-templates/step-feedback/step-results-table.md
+          vars: |
+            step_number: 1
+            results_table:
+              - description: "backend/package.json existe"
+                passed: ${{ steps.check-backend-package.outcome == 'success' }}
+              - description: "frontend/package.json existe"
+                passed: ${{ steps.check-frontend-package.outcome == 'success' }}
+              - description: "backend/src/ existe com arquivos"
+                passed: ${{ steps.check-backend-src.outcome == 'success' }}
+              - description: "frontend/src/ existe com arquivos"
+                passed: ${{ steps.check-frontend-src.outcome == 'success' }}
+
+      # FIM: Verificações da Etapa 1
+
+      # Falha o job se alguma verificação não passou (impede o próximo job de rodar)
+      - name: Falhar job se verificações não passaram
+        if: |
+          steps.check-backend-package.outcome == 'failure' ||
+          steps.check-frontend-package.outcome == 'failure' ||
+          steps.check-backend-src.outcome == 'failure' ||
+          steps.check-frontend-src.outcome == 'failure'
+        run: exit 1
+
+  # Job 3: Posta o conteúdo da Etapa 2 e habilita o próximo workflow
+  post_next_step_content:
+    name: Postar conteúdo da próxima etapa
+    needs: [find_exercise, check_step_work]
+    runs-on: ubuntu-latest
+    env:
+      ISSUE_REPOSITORY: ${{ github.repository }}
+      ISSUE_NUMBER: ${{ needs.find_exercise.outputs.issue-number }}
+
+    steps:
+      - name: Fazer Checkout
+        uses: actions/checkout@v4
+
+      - name: Obter templates de resposta
+        uses: actions/checkout@v4
+        with:
+          repository: skills/exercise-toolkit
+          path: exercise-toolkit
+          ref: v0.7.0
+
+      - name: Criar comentário - etapa finalizada
+        uses: GrantBirki/comment@v2.1.1
+        with:
+          repository: ${{ env.ISSUE_REPOSITORY }}
+          issue-number: ${{ env.ISSUE_NUMBER }}
+          file: exercise-toolkit/markdown-templates/step-feedback/step-finished-prepare-next-step.md
+          vars: |
+            next_step_number: 2
+
+      - name: Criar comentário - adicionar conteúdo da etapa
+        uses: GrantBirki/comment@v2.1.1
+        with:
+          repository: ${{ env.ISSUE_REPOSITORY }}
+          issue-number: ${{ env.ISSUE_NUMBER }}
+          file: ${{ env.STEP_2_FILE }}
+
+      - name: Criar comentário - observando progresso
+        uses: GrantBirki/comment@v2.1.1
+        with:
+          repository: ${{ env.ISSUE_REPOSITORY }}
+          issue-number: ${{ env.ISSUE_NUMBER }}
+          file: exercise-toolkit/markdown-templates/step-feedback/watching-for-progress.md
+
+      # Desabilita este workflow e habilita o próximo para evitar execuções desnecessárias
+      - name: Desabilitar workflow atual e habilitar o próximo
+        run: |
+          gh workflow disable "${{ github.workflow }}"
+          gh workflow enable "Step 2"
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

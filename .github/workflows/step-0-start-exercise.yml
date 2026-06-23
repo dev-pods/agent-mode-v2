@@ -1,0 +1,88 @@
+# Workflow: Step 0 - Iniciar Exercício
+#
+# Função: Este workflow é o ponto de entrada do curso. Ele é acionado quando um aluno
+# clona o repositório via template e faz o primeiro push na branch main. Ele cria
+# uma issue de progresso do curso, posta as instruções iniciais (Step 1) como
+# comentário e habilita o workflow da próxima etapa.
+#
+# Gatilho: push na branch main (acontece logo após clonar o template)
+# Pré-condição: o repositório NÃO deve ser o template original (is_template = false)
+
+name: Step 0 # Iniciar Exercício - Modo Agent do GitHub Copilot
+
+on:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: write
+  actions: write
+  issues: write
+
+env:
+  STEP_1_FILE: ".github/steps/1-structure.md"
+
+jobs:
+  # Job 1: Cria a issue de progresso usando o toolkit padrão dos cursos
+  start_exercise:
+    if: |
+      !github.event.repository.is_template
+    name: Iniciar Exercício
+    uses: skills/exercise-toolkit/.github/workflows/start-exercise.yml@v0.7.0
+    with:
+      exercise-title: "Construa Aplicações com o Modo Agent do GitHub Copilot"
+      intro-message: |
+        "Bem-vindo ao curso de **Modo Agent do GitHub Copilot**! 🚀
+
+        Neste exercício, você aprenderá a usar o poder do modo agent para construir
+        uma aplicação completa, criar agents customizados, escrever testes e
+        documentar seu projeto — tudo com a ajuda da inteligência artificial.
+
+        Vamos começar! 💻✨"
+
+  # Job 2: Posta o conteúdo da Etapa 1 na issue criada e habilita o próximo workflow
+  post_next_step_content:
+    name: Postar conteúdo da próxima etapa
+    runs-on: ubuntu-latest
+    needs: [start_exercise]
+    env:
+      ISSUE_NUMBER: ${{ needs.start_exercise.outputs.issue-number }}
+      ISSUE_REPOSITORY: ${{ github.repository }}
+
+    steps:
+      - name: Fazer Checkout
+        uses: actions/checkout@v4
+
+      - name: Obter templates de resposta
+        uses: actions/checkout@v4
+        with:
+          repository: skills/exercise-toolkit
+          path: exercise-toolkit
+          ref: v0.7.0
+
+      # Posta as instruções da Etapa 1 na issue de progresso
+      - name: Criar comentário - adicionar conteúdo da etapa
+        uses: GrantBirki/comment@v2.1.1
+        with:
+          repository: ${{ env.ISSUE_REPOSITORY }}
+          issue-number: ${{ env.ISSUE_NUMBER }}
+          file: ${{ env.STEP_1_FILE }}
+          vars: |
+            login: ${{ github.actor }}
+            full_repo_name: ${{ github.repository }}
+
+      # Informa ao aluno que o sistema está monitorando o progresso
+      - name: Criar comentário - observando progresso
+        uses: GrantBirki/comment@v2.1.1
+        with:
+          repository: ${{ env.ISSUE_REPOSITORY }}
+          issue-number: ${{ env.ISSUE_NUMBER }}
+          file: exercise-toolkit/markdown-templates/step-feedback/watching-for-progress.md
+
+      # Habilita o workflow da Etapa 1 para que ele passe a monitorar pushes na branch build-agent-mode
+      - name: Habilitar workflow da próxima etapa
+        run: |
+          gh workflow enable "Step 1"
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
